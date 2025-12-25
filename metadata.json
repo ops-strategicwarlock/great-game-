@@ -1,0 +1,7 @@
+{
+  "name": "Fallout Strand OS",
+  "description": "A decentralized location narrative protocol where players claim territories, discover Fallout lore as NFTs, and participate in emergent faction warfare.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
