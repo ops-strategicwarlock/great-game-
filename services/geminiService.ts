@@ -1,12 +1,13 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { FACTION_ENCOUNTERS } from "../constants";
+import { Faction } from "../types";
 
 /**
  * Performs a wasteland search using Google Search grounding.
  */
 export const performWastelandSearch = async (query: string) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Wasteland OSINT Terminal: Searching data for "${query}". 
@@ -24,19 +25,29 @@ export const performWastelandSearch = async (query: string) => {
 };
 
 /**
- * Generates a faction-specific tactical briefing (The "Event" stage).
+ * Generates a faction-specific tactical briefing utilizing the encounter pool.
  */
-export const generateTacticalBriefing = async (territory: string, faction: string) => {
+export const generateTacticalBriefing = async (territory: string, faction: Faction) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const factionData = FACTION_ENCOUNTERS[faction];
+  
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: `Analyze ${territory} currently held by ${faction}. 
-    Generate a tactical encounter based on these tables:
-    - If NCR: Introduce 'NCR Patrol Unit' or 'Settler Dispute'. Focus on bureaucracy or under-supplied rangers.
-    - If Enclave: Introduce 'Robotic Security Checkpoint' or 'Radiation Anomaly'. Focus on high-tech terror.
-    - If BOS: Introduce 'Scribe Field Research' or 'Paladin Sentry'. Focus on tech-hoarding.
-    - If House: Introduce 'Securitron Mk II Patrol'. Focus on automated efficiency.
-    - If Independent: Introduce 'Raider Ambush' or 'Feral Swarm'.
-    Return a structured JSON SITREP.`,
+    Faction Thematic Focus: ${factionData.focus}
+    Permitted Encounter Types: ${factionData.encounters.join(', ')}
+    Possible Reward Focuses: ${factionData.rewards.join(', ')}
+    
+    TASK: Pick ONE specific encounter from the list and expand it into a full tactical SITREP.
+    - Title: A high-clearance mission name.
+    - Description: A detailed narrative of the tactical situation.
+    - EnemyType: The specific threat (e.g., 'NCR Heavy Trooper', 'Enclave Sigma Squad').
+    - Difficulty: Scale 1-10 based on faction hostility.
+    - RewardEstimate: A descriptive summary of what will be looted.
+    - StabilityImpact: How much damage this assault does to faction control (5-25).
+    - UniqueRewardType: Must be one of [INTEL, PARTS, CAPS, REPUTATION].
+    
+    Return strictly as valid JSON.`,
     config: {
       thinkingConfig: { thinkingBudget: 1000 },
       responseMimeType: "application/json",
@@ -46,10 +57,12 @@ export const generateTacticalBriefing = async (territory: string, faction: strin
           title: { type: Type.STRING },
           description: { type: Type.STRING },
           enemyType: { type: Type.STRING },
-          difficulty: { type: Type.NUMBER, description: "1 to 10" },
-          rewardEstimate: { type: Type.STRING }
+          difficulty: { type: Type.NUMBER },
+          rewardEstimate: { type: Type.STRING },
+          stabilityImpact: { type: Type.NUMBER },
+          uniqueRewardType: { type: Type.STRING, enum: ['INTEL', 'PARTS', 'CAPS', 'REPUTATION'] }
         },
-        required: ["title", "description", "enemyType", "difficulty", "rewardEstimate"]
+        required: ["title", "description", "enemyType", "difficulty", "rewardEstimate", "stabilityImpact", "uniqueRewardType"]
       }
     }
   });
@@ -58,63 +71,86 @@ export const generateTacticalBriefing = async (territory: string, faction: strin
 };
 
 /**
- * Generates a lore fragment based on real-world coordinates.
+ * Generates a lore fragment based on real-world coordinates using Maps Grounding.
  */
 export const generateLocalizedLore = async (lat: number, lng: number) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: `SYSTEM SCAN: Coordinates [${lat}, ${lng}]. 
-    Imagine this real-world location in the Fallout 'Day 0' universe. 
-    Analyze the terrain (Urban, Industrial, or Rural). 
-    Generate a 'Echo Memory' fragment: a short narrative artifact found at these coordinates.
-    Include a mention of a 'Strand' connection.`,
+    Use Google Maps to identify the surrounding terrain and landmarks. 
+    Imagine this location in the Fallout 'Day 0' universe. 
+    Generate a 'Echo Memory' fragment: a short narrative artifact found at these specific coordinates.
+    Include a mention of a 'Strand' connection or pre-war echo.
+    Return ONLY a JSON object with keys: title, fragment, environment, rarity (one of 'COMMON', 'RARE', 'LEGENDARY').`,
     config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          fragment: { type: Type.STRING },
-          environment: { type: Type.STRING, enum: ['URBAN', 'INDUSTRIAL', 'RURAL'] },
-          rarity: { type: Type.STRING, enum: ['COMMON', 'RARE', 'LEGENDARY'] }
-        },
-        required: ["title", "fragment", "environment", "rarity"]
-      }
+      tools: [{ googleMaps: {} }],
+      toolConfig: {
+        retrievalConfig: {
+          latLng: {
+            latitude: lat,
+            longitude: lng
+          }
+        }
+      },
     }
   });
-  return JSON.parse(response.text);
+
+  const text = response.text || '';
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("Failed to parse JSON from localized lore response", e);
+    }
+  }
+  throw new Error("Could not extract valid SITREP JSON from Maps Grounding response.");
 };
 
 /**
- * Generates narrative for a specific combat wave (The "MIE" stage).
+ * Generates narrative for a specific combat wave with faction-specific combat behaviors.
  */
 export const generateCombatWave = async (briefing: any, wave: number, faction: string) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Describe Wave ${wave}/3 of an assault against a ${faction} ${briefing.enemyType}. 
-    The current situation is: ${briefing.description}. 
-    Make it immersive, dark, and suggest a tactical challenge (e.g. 'The plasma turrets are cycling', 'The NCR soldiers are calling for backup').`,
+    contents: `PHASE: Combat Wave ${wave}/3. 
+    OP: ${briefing.title}. 
+    FACTION: ${faction}. 
+    THREAT: ${briefing.enemyType}.
+    
+    Describe the escalating combat situation. 
+    Wave 1: Initial contact and scouting.
+    Wave 2: Heavy engagement, specialized weapons (lasers for BOS/Enclave, numbers for NCR).
+    Wave 3: Boss/Commander encounter or defensive fallback.
+    
+    Keep the tone gritty, technical, and focused on the difficulty level of ${briefing.difficulty}/10.`,
   });
   return response.text;
 };
 
-export const generateLoreArtifact = async (location: string, faction: string) => {
+/**
+ * Converts text to speech using Gemini TTS.
+ */
+export const speakBroadcast = async (text: string) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Generate a short Fallout-style terminal entry or holotape transcript found at ${location}. 
-    The area is controlled by ${faction}. Mention pre-war Bakersfield (Necropolis).`,
+    model: "gemini-2.5-flash-preview-tts",
+    contents: [{ parts: [{ text: `Say with a gritty, distorted radioactive radio host voice: ${text}` }] }],
     config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          content: { type: Type.STRING },
-          rarity: { type: Type.STRING, enum: ['COMMON', 'RARE', 'LEGENDARY'] }
+      responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName: 'Kore' },
         },
-        required: ["title", "content", "rarity"]
-      }
-    }
+      },
+    },
   });
-  return JSON.parse(response.text);
+
+  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (base64Audio) {
+    return base64Audio;
+  }
+  return null;
 };

@@ -41,6 +41,7 @@ export interface Territory {
   owner: Faction;
   lastClaimed: Date;
   revenue: number;
+  stability: number; // 0 to 100
 }
 
 export interface NFTItem {
@@ -131,6 +132,8 @@ export interface AssaultState {
     enemyType: string;
     difficulty: number;
     rewardEstimate: string;
+    stabilityImpact: number;
+    uniqueRewardType: 'INTEL' | 'PARTS' | 'CAPS' | 'REPUTATION';
   };
   currentWave: number;
   waveLogs: string[];

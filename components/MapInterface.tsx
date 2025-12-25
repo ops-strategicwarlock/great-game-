@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Territory, Faction } from '../types';
 import { FACTION_COLORS } from '../constants';
 
@@ -33,15 +33,9 @@ const MapInterface: React.FC<MapInterfaceProps> = ({ territories, onSelect, onSc
               <div className="w-64 h-64 border border-[#32cd3255] rounded-full animate-ping opacity-20"></div>
               <div className="w-48 h-48 border border-[#32cd3233] rounded-full animate-pulse"></div>
             </div>
-            <div className="absolute top-4 left-4 text-[8px] opacity-60 font-mono">
-              <div className="animate-pulse">SATELLITE SYNC: ACTIVE</div>
-              <div>BING_ORTHO_FEED: CONNECTED</div>
-              <div>COORD_RESOLVE: RUNNING</div>
-            </div>
           </div>
         )}
 
-        {/* Style for scan animation */}
         <style>{`
           @keyframes scan {
             from { top: 0; }
@@ -49,7 +43,6 @@ const MapInterface: React.FC<MapInterfaceProps> = ({ territories, onSelect, onSc
           }
         `}</style>
 
-        {/* Simple stylized SVG map */}
         <svg viewBox="0 0 800 600" className="w-full h-full">
           <defs>
             <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -58,7 +51,6 @@ const MapInterface: React.FC<MapInterfaceProps> = ({ territories, onSelect, onSc
           </defs>
           <rect width="800" height="600" fill="url(#grid)" />
           
-          {/* Territory Nodes */}
           {territories.map((t, idx) => {
             const x = 100 + (idx % 3) * 250;
             const y = 100 + Math.floor(idx / 3) * 200;
@@ -69,11 +61,15 @@ const MapInterface: React.FC<MapInterfaceProps> = ({ territories, onSelect, onSc
                 <circle cx={x} cy={y} r="8" fill={FACTION_COLORS[t.owner]} />
                 <circle cx={x} cy={y} r="12" fill="none" stroke={FACTION_COLORS[t.owner]} strokeWidth="2" className="animate-pulse" />
                 
-                <text x={x} y={y + 30} textAnchor="middle" fill="#32cd32" fontSize="12" className="font-bold">
+                {/* Stability Gauge */}
+                <rect x={x - 30} y={y - 25} width="60" height="4" fill="#000" rx="2" />
+                <rect x={x - 30} y={y - 25} width={(t.stability / 100) * 60} height="4" fill={t.stability < 40 ? '#ff0000' : '#32cd32'} rx="2" />
+
+                <text x={x} y={y + 35} textAnchor="middle" fill="#32cd32" fontSize="11" className="font-bold">
                   {t.name}
                 </text>
-                <text x={x} y={y + 45} textAnchor="middle" fill="#ffffff" fontSize="10" opacity="0.7">
-                  {t.owner} / {t.hostility} HOSTILITY
+                <text x={x} y={y + 48} textAnchor="middle" fill="#ffffff" fontSize="9" opacity="0.6" className="uppercase">
+                  {t.owner} // {t.stability}% STB
                 </text>
               </g>
             );
@@ -89,11 +85,6 @@ const MapInterface: React.FC<MapInterfaceProps> = ({ territories, onSelect, onSc
             </div>
           ))}
         </div>
-      </div>
-      
-      <div className="mt-4 p-3 bg-[#32cd3211] border border-[#32cd3233] text-[10px] flex justify-between items-center">
-        <span className="italic">"Real-time GPS triangulation recommended for precise strand localization."</span>
-        <span className="opacity-40">LOC: 35.37°N, 119.01°W</span>
       </div>
     </div>
   );
